@@ -1,6 +1,39 @@
 Revision history for Perl extension AI::Categorize
 
-0.06
+
+0.07  Fri Feb 15 23:31:10 CST 2002
+  - Major improvements to NaiveBayes - it now gives results on par with
+    (slightly better than, actually) the Naive Bayes results in Yang's
+    "Re-Examination" paper.
+
+  - Corrected a floating-point underflow problem in NaiveBayes that
+    occurred with long documents
+
+  - When categorizing, NaiveBayes now correctly skips words that
+    weren't in any training documents.
+ 
+  - Added the threshold() accessor method to NaiveBayes
+
+  - Fixed a crash that occurred when no stopwords were specified
+
+  - Improved the formatting of the output for AI::Categorize::Evaluate
+
+  - reuters-21578, features_kept => 0.1
+    ******************* Summary *************************************
+    *        Name         miR   miP   miF1  error      time         *
+    *   01-NaiveBayes:   0.824 0.883 0.839  0.005     407 sec       *
+    *****************************************************************
+
+  - drmath-1.00,   features_kept => 0.1
+    ******************* Summary *************************************
+    *        Name         miR   miP   miF1  error      time         *
+    *   01-NaiveBayes:   0.323 0.397 0.341  0.016     145 sec       *
+    *          01-kNN:   0.636 0.144 0.220  0.078     990 sec       * <- features_kept => 0.2
+    *          01-kNN:   0.606 0.149 0.223  0.073    1221 sec       * <- features_kept => 0.1
+    *****************************************************************
+
+
+0.06  Wed Nov  7 11:33:32 CST 2001
   - Fixed a bug which resulted in incorrect probabilities in
     NaiveBayes categorize() calculations.
 

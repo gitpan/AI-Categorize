@@ -2,7 +2,7 @@
 
 # A sample of using AI::Categorize::Evaluate
 
-use lib 'blib/lib';
+use blib;
 use AI::Categorize::Evaluate;
 
 my $data_dir = 
@@ -17,8 +17,8 @@ chomp @stopwords;
 my $e = new AI::Categorize::Evaluate
   (
    'packages'     => [
-		      'AI::Categorize::NaiveBayes',
-		      #'AI::Categorize::kNN',
+		      #'AI::Categorize::NaiveBayes',
+		      'AI::Categorize::kNN',
 		     ],
    'training_set' => "$data_dir/training",
    #'test_size'    => 5,
@@ -28,13 +28,13 @@ my $e = new AI::Categorize::Evaluate
    'stopwords'    => \@stopwords,
    'save'         => "$data_dir/save",
    'args'         => [features_kept => 0.1],
-   #'verbose' => 1,
+   'verbose' => 1,
   );
 #$e->add('AI::Categorize::NaiveBayes', args => [features_kept => 0  ]);
 #$e->add('AI::Categorize::kNN', args => [features_kept => 0.1]);
 
 
-#$e->parse_training_data;
+$e->parse_training_data;
 #$e->show_test_docs;
-#$e->crunch;
+$e->crunch;
 $e->categorize_test_set;

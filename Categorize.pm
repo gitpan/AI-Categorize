@@ -4,7 +4,7 @@ use Storable ();
 package AI::Categorize;
 
 use vars qw($VERSION);
-$VERSION = '0.06';
+$VERSION = '0.07';
 
 sub new {
   my $package = shift;
@@ -20,6 +20,8 @@ sub stopwords {
   if (@_) {
     $self->{stopwords} = { map {$_,1} @_ };
   }
+  $self->{stopwords} ||= {};
+  return $self->{stopwords};
 }
 
 sub add_stopword {
@@ -29,7 +31,7 @@ sub add_stopword {
 
 sub stopword_hash {
   my $self = shift;
-  return %{$self->{stopwords}};
+  return %{$self->stopwords};
 }
 
 sub extract_words {
@@ -98,11 +100,38 @@ sub error {
 
 sub _intersection {
   my ($self, $one, $two) = @_;
-  my %uniq;
-  @uniq{@$one} = ();
-  my $result = 0;
-  foreach (@$two) {$result++ if exists $uniq{$_}}
-  return $result;
+  $two = {map {$_=>1} @$two} unless UNIVERSAL::isa($two, 'HASH');  # Accept hash or array for $two
+
+  return UNIVERSAL::isa($one, 'HASH') ?  # Accept hash or array for $one
+    grep {exists $two->{$_}} keys %$one :
+    grep {exists $two->{$_}} @$one;
+}
+
+sub maximize_score {
+  my ($self, $method, $docs, $truth) = @_;
+
+  my @keys = sort {$docs->{$b} <=> $docs->{$a}} keys %$docs;
+  my @values = @$docs{@keys};
+  
+  my @candidates;
+  {
+    my @temp = ($values[0]+1, @values, 0);
+    while (@temp > 1) {  # Don't use the last element
+      push @candidates, (shift(@temp) + $temp[0])/2;
+    }
+  }
+
+  my ($best_thresh, $best_score) = (0,0);
+  my @assigned = ();
+  foreach my $candidate (@candidates) {
+    #print "#";
+    
+    my $score = $self->$method(\@assigned, $truth);
+    ($best_thresh,$best_score) = ($candidate,$score) if $score > $best_score;
+
+    push @assigned, shift @keys;  # each new candidate adds one document
+  }
+  return $best_thresh;
 }
 
 # Default noop

@@ -16,6 +16,15 @@ sub new {
 
 sub crunch {
   my ($self) = @_;
+  
+  # We divide this into smaller methods, mostly because each one takes
+  # a while to run, and it's easier to test this way.
+  $self->process_data;
+  $self->learn_thresholds;
+}
+
+sub process_data {
+  my ($self) = @_;
 
   $self->trim_features($self->{features_kept}) if $self->{features_kept};
 
@@ -23,7 +32,6 @@ sub crunch {
   foreach my $document (keys %{$self->{cache}}) {
     $self->normalize($self->{cache}{$document});
   }
-  $self->learn_thresholds;
 }
 
 sub learn_thresholds {
@@ -73,7 +81,8 @@ sub learn_thresholds {
     }
 
     # Choose a threshold that maximizes F1
-    $self->{thresholds}{$cat} = $self->maximize_F1(\%held, \%others);
+    #$self->{thresholds}{$cat} = $self->maximize_F1(\%held, \%others);
+    $self->{thresholds}{$cat} = $self->maximize_score('F1', {%held, %others}, [keys %held]);
     if ($self->{thresholds}{$cat}) {
       print "$self->{thresholds}{$cat}\n" if $self->{verbose};
     } else {
@@ -84,36 +93,21 @@ sub learn_thresholds {
   }
 }
 
-sub maximize_F1 {
-  my ($self, $correct, $incorrect) = @_;
-  
-  my @all = sort {$a<=>$b} 0,values(%$correct),values(%$incorrect);
-  my @candidates;
-  foreach (0..$#all-1) {
-    my $x = ($all[$_] + $all[$_+1])/2;
-    push @candidates, $x if $x;  # Don't use zero
-  }
-
-  my ($best_thresh, $best_F1) = (0,0);
-  foreach my $candidate (@candidates) {
-    my @outcome = ((grep {$correct->{$_}   > $candidate} keys %$correct),
-		   (grep {$incorrect->{$_} > $candidate} keys %$incorrect));
-    my $F1 = $self->F1(\@outcome, [keys %$correct]);
-    ($best_thresh,$best_F1) = ($candidate,$F1) if $F1 > $best_F1;
-  }
-  return $best_thresh;
-}
-
 sub get_scores {
+  # Usage: $self->get_scores(vector => \% [, corpus => \%] [, avoid_docs => \%])
+  #        $self->get_scores(doc => $name, scores => \% [, corpus => \%] [, avoid_docs => \%])
+
   my ($self, %args) = @_;
   $args{avoid_docs} ||= {};
-  
+  $args{corpus} ||= $self->{cache};
+
   my %doc_scores;
   my $i;
   local $|=1;
-  while (my ($doc, $words) = each %{$self->{cache}}) {
+  while (my ($doc, $words) = each %{$args{corpus}}) {
     next if exists $args{avoid_docs}{$doc};
-    $doc_scores{$doc} = $self->dot_product($words, $args{vector});
+    $doc_scores{$doc} = $args{scores} ? $args{scores}{$args{doc}}{$doc}
+                                      : $self->dot_product($words, $args{vector});
     #print "." unless $i++ % 5;
     #warn "$doc: $doc_scores{$doc}\n";
   }
@@ -141,10 +135,8 @@ sub categorize {
   
   # Adjust all scores so that the common threshold is 1
   foreach my $cat (keys %$scores) {
-    #warn "$cat: $scores->{$cat}\n";
     $scores->{$cat} /= $self->{thresholds}{$cat};
   }
-
 
   return $self->{results_class}->new(scores => $scores,
                                      threshold => 1);

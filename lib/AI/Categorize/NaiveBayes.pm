@@ -39,8 +39,9 @@ sub crunch {
   $self->trim_features($self->{features_kept}) if $self->{features_kept};
   
   my $vocabulary = $self->total_types;
-  
   my $totaldocs = $self->cat_map->documents;
+
+  # Calculate the probabilities for each category
   foreach my $cat (keys %{$self->{count}}) {
     $self->{catprob}{$cat} = log($self->cat_map->documents_of($cat) / $totaldocs);
 
@@ -53,6 +54,12 @@ sub crunch {
       $self->{probs}{$cat}{$word} = log($self->{count}{$cat}{$word} + 1) - $denominator;
     }
   }
+}
+
+sub threshold {
+  my $self = shift;
+  $self->{threshold} = shift if @_;
+  return $self->{threshold};
 }
 
 sub total_types { keys %{shift->{docword}} }
@@ -76,11 +83,24 @@ sub cat_tokens {
 sub categorize {
   my $self = shift;
   my $newdoc = $self->extract_words(shift);
+  my $scores = $self->get_scores($newdoc);
+  
+#    if ($self->{verbose}) {
+#      foreach my $key (sort {$scores{$b} <=> $scores{$a}} keys %scores) {
+#        print "$key: $scores{$key}\n";
+#      }
+#    }
+
+  return $self->{results_class}->new(scores => $scores,
+				     threshold => $self->{threshold},
+				    );
+}
+
+sub get_scores {
+  my ($self, $newdoc) = @_;
   
   # Note that we're using the log(prob) here.  That's why we add instead of multiply.
 
-  my $i;
-  local $|=1;
   my %scores;
   while (my ($cat,$words) = each %{$self->{probs}}) {
     my $fake_prob = -log($self->{tokens}{$cat} + $self->total_types); # Like a very infrequent word
@@ -88,25 +108,18 @@ sub categorize {
     $scores{$cat} = $self->{catprob}{$cat}; # P($cat)
     
     while (my ($word, $count) = each %$newdoc) {
-      #next unless $words->{$word};
-      #$scores{$cat} += $words->{$word}*$count; # P(word|cat)
-      $scores{$cat} += ($words->{$word} || $fake_prob)*$count; # P($word|$cat)
+      next unless exists $self->{docword}{$word};
+      $scores{$cat} += ($words->{$word} || $fake_prob)*$count;   # P($word|$cat)**$count
     }
-    
-    # Convert back from log(prob) to prob
-    $scores{$cat} = exp $scores{$cat};
   }
-
+  
+  # Scale everything back to a reasonable area in logspace (near zero)
+  my $min = 0;
+  foreach (values %scores) {$min = $_ if $_ < $min}
+  foreach (keys %scores) {$scores{$_} = exp($scores{$_} - $min)}
+  
   $self->normalize(\%scores);
-#    if ($self->{verbose}) {
-#      foreach my $key (sort {$scores{$b} <=> $scores{$a}} keys %scores) {
-#        print "$key: $scores{$key}\n";
-#      }
-#    }
-
-  return $self->{results_class}->new(scores => \%scores,
-				     threshold => $self->{threshold},
-				    );
+  return \%scores;
 }
 
 sub trim_features {
@@ -201,6 +214,11 @@ currently 0.3.  Set the threshold lower to assign more categories per
 document, set it higher to assign fewer.
 
 =back
+
+=head2 threshold()
+
+Returns the current threshold value.  With an optional numeric
+argument, you may set the threshold.
 
 
 =head1 THEORY

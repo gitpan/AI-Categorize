@@ -284,7 +284,7 @@ sub categorize_test_set {
 
       foreach my $method (keys %ratings) {
 	my $value = $c->$method(\@cats, $real_cats);
-	print "$method = $value, ";
+	print "$method = ", substr($value, 0, 5), ", ";
 	$ratings{$method} += $value;
       }
       print "\n";
