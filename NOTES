@@ -1,0 +1,13 @@
+
+Idea from obvy: try tying into infobot (purl) to identify IRC moods: 
+@moods = qw(indifferent flame_mode pissed inebriated happy sad)
+
+Links from Na'im Tyson:
+www.ruf.rice.edu/~barlow/corpus.html (corp. lx.)
+ciir.cs.umass.edu (info. ret)
+www.georgetown.edu/wilson/IR/IR.html (class in IR @ Georgetown University)
+www.research.att.com/~lewis (professional homepage
+  of David Lews, one of the leaders in document
+  categorization.  you may want to visit his site
+  sooner than the others since he has left AT&T research.)
+

@@ -2,67 +2,150 @@ package AI::Categorize::Evaluate;
 
 use strict;
 use Benchmark;
+use Storable ();
+
+
+=begin data model
+
+$self = 
+  {
+   tests => 
+   [
+    {
+     pkg => 'AI::Categorize::kNN',
+     name => '...', # visual id
+     args => [...],
+     c => $c,
+     test_docs => {...},
+     training_docs => [...],
+     stopwords => [...],
+     categories => {...},
+    },
+    { ... },
+    ...
+   ],
+   # 'defaults' specifies global parameters, so they can be shared among several tests
+   defaults =>
+   {
+    test_docs => {...},
+    training_docs => [...],
+    stopwords => [...],
+    categories => {...},
+   }
+   data_dir => '...',
+  };
+
+=end
+
+=cut
 
 sub new {
   my ($package, %args) = @_;
   
-  for ('packages') {
-    die "Required parameter '$_' missing" unless $args{$_};
-  }
-
-  my $self = bless {
-		    data_dir => '.',
-		    stopwords => [],
-		    %args,
-		   }, $package;
+  my $self = bless 
+    {
+     tests => [],
+     data_dir => ($args{data_dir} || '.'),
+    }, $package;
   
-  foreach (@{$self->{packages}}) {
-    eval "use $_";
-    die $@ if $@;
-    $self->{pkgs}{$_}{obj} = $_->new();
+  $self->{defaults} = $self->new_instance(undef, %args);
+  $self->{iterations} = $args{iterations} || 1;
+
+  if ($args{packages}) {
+    my %more_args = $args{test_size} ? (test_size => $args{test_size}) : ();
+    foreach my $pkg (@{$args{packages}}) {
+      $self->add($pkg, %more_args) for 1..$self->{iterations};  # Use default args
+    }
+  }
+  for ('save', 'verbose') {
+    $self->{$_} = $args{$_} if $args{$_};
   }
 
-  delete $self->{packages};
   return $self;
+}
+
+sub add {
+  my ($self, $pkg, %args) = @_;
+  eval "use $pkg";
+  die $@ if $@;
+
+  my $new_test;
+  push @{$self->{tests}}, $new_test = $self->new_instance($self->{defaults}, %args);
+  $new_test->{pkg} = $pkg;
+  $new_test->{name} = sprintf("%02d-", scalar @{$self->{tests}}) . $self->shortname($pkg);
+  $new_test->{args} = $args{args} || [];
+  $new_test->{c} = $pkg->new(@{$new_test->{args}});
+
+  return $new_test;
+}
+
+sub new_instance {
+  my ($self, $default, %args) = @_;
+  my $struct = {};
+
+  if ($args{training_set}) {
+    $struct->{training_docs} = $self->read_dir($args{training_set});
+  } elsif ($default) {
+    $struct->{training_docs} = $default->{training_docs};
+  }
+
+  if ($args{test_set}) {
+    $struct->{test_docs} = {map {$_,1} @{$self->read_dir($args{test_set})}};
+  } elsif ($args{test_size}) {
+    die "No training set specified\n" unless $struct->{training_docs};
+    $struct->{test_docs} = $self->random_subset($struct->{training_docs}, $args{test_size});
+  } elsif ($default) {
+    $struct->{test_docs} = $default->{test_docs};
+  }
+
+  for ('categories') {
+    if ($args{$_})   { $struct->{$_} = $self->read_cats($args{$_}) }
+    elsif ($default) { $struct->{$_} = $default->{$_}              }
+  }
+
+  for ('stopwords') {
+    if ($args{$_})   { $struct->{$_} = $args{$_}      }
+    elsif ($default) { $struct->{$_} = $default->{$_} }
+  }
+
+  return $struct;
 }
 
 sub shortname { local $_ = $_[1]; s/.*:://; $_ }
 
-sub read_docs {
-  my $self = shift;
-  return if $self->{training_docs};
+sub random_subset {
+  my ($self, $set, $size) = @_;
 
-  die "No training set specified\n" unless $self->{training_set};
-  $self->{training_docs} = $self->read_dir($self->{training_set});
+  $size = int($size * @$set / 100) if $size =~ /%$/;
 
-  if ($self->{test_size}) {
-    # Test documents are drawn from the training corpus
-    $self->{test_size} = int($self->{test_size} * @{$self->{training_docs}} / 100)
-      if $self->{test_size} =~ /%$/;
+  die ("$size documents needed for testing, but only " . @$set . " docs in training set - aborting")
+    if $size >= @$set;
 
-    for (1..$self->{test_size}) {
-      push @{$self->{test_docs}}, 
-	splice @{$self->{training_docs}}, rand(@{$self->{training_docs}}), 1;
-    }
-  } elsif ($self->{test_set}) {
-    $self->{test_docs} = $self->read_dir($self->{test_set});
+  warn "Warning: no documents in test set\n" unless $size;
+
+  my $result = {};
+  for (1..$size) {
+    my $random = $set->[ rand @$set ];
+    redo if exists $result->{$random};
+    $result->{$random} = 1;
   }
   
-  print "No test set given - skipping evaluation phase\n" unless @{$self->{test_docs}};
+  return $result;
 }
 
 sub read_cats {
-  my ($self) = @_; 
-  return if $self->{docs};
+  my ($self, $path) = @_; 
   
-  die "Required parameter 'categories' missing" unless $self->{categories};
   local *FH;
-  open FH, $self->{categories} or die "Can't open '$self->{categories}': $!";
+  open FH, $path or die "Can't open '$path': $!";
+  my $result = {};
+  local $_;
   while (<FH>) {
     my ($doc, @cats) = split;
-    $self->{docs}{$doc} = [@cats];
+    $result->{$doc} = [@cats];
   }
   close FH;
+  return $result;
 }
 
 sub read_dir {
@@ -80,33 +163,64 @@ sub parse_training_data {
 
   print "---------- parsing training data ---------------\n";
 
-  $self->read_docs;
-  $self->read_cats;
-
-  foreach my $type ($self->types) {
+  foreach my $test (@{$self->{tests}}) {
     my $i;
     my $start = new Benchmark;
-    print "\n$type:\n";
-    my $c = $self->{pkgs}{$type}{obj};
+    print "\n$test->{name}:\n";
+    my $c = $test->{c};
     
-    $c->stopwords(@{$self->{stopwords}});
+    $c->stopwords(@{$test->{stopwords}});
     
-    foreach my $path ( @{$self->{training_docs}} ) {
-      (my $file = $path) =~ s#.*/##;
+    foreach my $path ( @{$test->{training_docs}} ) {
+      next if $test->{test_docs}{$path}; # Skip docs used in testing
+      (my $name = $path) =~ s#.*/##;
       
-      warn "Warning: no categories found for document '$file'\n" unless $self->{docs}{$file};
-      my $cats = $self->{docs}{$file} || [];
-
+      warn "Warning: no categories found for document '$name'\n" unless $test->{categories}{$name};
+      my $cats = $test->{categories}{$name} || [];
+	
       open FILE, $path or die "$path: $!";
-      $c->add_document($file, $cats, join '', <FILE>);
+      $c->add_document($name, $cats, join '', <FILE>);
       close FILE;
-
+      
       print "." unless $i++ % 5;
     }
-    $c->save_state("$self->{data_dir}/".$self->shortname($type).'-1');
+
     my $end = new Benchmark;
     print "\nRunning time: ", timestr(timediff($end, $start)), " for $i documents.\n";
   }
+  $self->save();
+}
+
+sub show_test_docs {
+  my ($self) = @_;
+  local $| = 1;
+
+  print "---------- test docs: ---------------\n";
+
+  foreach my $test (@{$self->{tests}}) {
+    print "\n$test->{name}:\n";
+    print " $_ \n" foreach keys %{$test->{test_docs}};
+  }
+}
+
+
+sub save {
+  my ($self) = @_;
+  return unless $self->{save};
+  
+  (my $subname = (caller(1))[3]) =~ s/.*:://;
+  my $file = "$self->{save}-$subname";
+  warn "Saving $file\n";
+  Storable::store($self, $file);
+}
+
+sub load {
+  my ($self, $prev) = @_;
+  return unless $self->{save};
+  
+  my $file = "$self->{save}-$prev";
+  warn "Loading $file\n";
+  %$self = %{Storable::retrieve($file)};
 }
 
 sub crunch {
@@ -115,16 +229,17 @@ sub crunch {
 
   print "---------- crunching training data ---------------\n";
 
-  foreach my $type ($self->types) {
+  $self->load('parse_training_data');
+  foreach my $test (@{$self->{tests}}) {
     my $start = new Benchmark;
-    print "\n$type:\n";
-    my $c = $self->{pkgs}{$type}{obj};
-    $c->restore_state("$self->{data_dir}/".$self->shortname($type).'-1');
+    print "\n$test->{name}:\n";
+    my $c = $test->{c};
+    $c->{verbose} = 1;
     $c->crunch;
-    $c->save_state("$self->{data_dir}/".$self->shortname($type).'-2');
     my $end = new Benchmark;
     print "\nRunning time: ", timestr(timediff($end, $start)), "\n";
   }
+  $self->save();
 }
 
 sub categorize_test_set {
@@ -132,47 +247,61 @@ sub categorize_test_set {
 
   print "\n---------- categorizing test data ---------------\n";
 
-  $self->read_docs;
-  $self->read_cats;
-
-  foreach my $type ($self->types) {
+  $self->load('crunch');
+  
+  foreach my $test (@{$self->{tests}}) {
     my $i;
     my $start = new Benchmark;
-    print "\n$type:\n";
-    my $c = $self->{pkgs}{$type}{obj};
-    $c->restore_state("$self->{data_dir}/".$self->shortname($type).'-2');
-
-    foreach my $path (@{$self->{test_docs}}) {
+    print "\n$test->{name}:\n";
+    my $c = $test->{c};
+    
+    my $num_tests = keys %{$test->{test_docs}};
+    my $F1_total = 0;
+    while (my ($path) = each %{$test->{test_docs}}) {
       (my $file = $path) =~ s#.*/##;
-      print " Categorizing '$file'\n";
-
+      print " Categorizing '$file': ";
+      
       open FILE, $path or die "$path: $!";
       my $r = $c->categorize(join '', <FILE>);
       close FILE;
       
       my @cats = $r->categories;
       my @scores = $r->scores(@cats);
+      my $real_cats = $test->{categories}{$file} || [];
 
-      foreach (0..$#cats) {
-	print "   $cats[$_]: $scores[$_]\n";
+      if ($self->{verbose}) {
+	print "\n";
+	foreach (0..$#cats) {
+	  print "   $cats[$_]: $scores[$_]\n";
+	}
+	print "\nReal Categories:\n";
+	
+	warn "Warning: no categories found for document '$file'\n" unless $test->{categories}{$file};
+	foreach (@$real_cats) {
+	  print "  + $_\n";
+	}
       }
-      print "\nReal Categories:\n";
-
-      warn "Warning: no categories found for document '$file'\n" unless $self->{docs}{$file};
-      my $real_cats = $self->{docs}{$file} || [];
-      foreach (@$real_cats) {
-	print "  + $_\n";
-      }
-
-      my $f1 = $c->F1(\@cats, $real_cats);
-      print "F1 = $f1\n";
-
-      print "-----------\n\n";
+      
+      my $F1 = $c->F1(\@cats, $real_cats);
+      print "F1 = $F1\n";
+      $F1_total += $F1;
+      
+      print "-----------\n\n" if $self->{verbose};
       $i++;
     }
+    $test->{results}{F1} = $F1_total/$num_tests;
+    printf "Average F1 score: %.3f\n", $test->{results}{F1};
     my $end = new Benchmark;
+    $test->{results}{time} = 0 + timestr(timediff($end, $start));
     print "\nRunning time: ", timestr(timediff($end, $start)), " for $i documents.\n";
   }
+
+  print "******************* Summary *********************\n";
+  foreach my $test (@{$self->{tests}}) {
+    printf("* %20s: F1=%.3f  time=%4d sec *\n", 
+	   $test->{name}, $test->{results}{F1}, $test->{results}{time});
+  }
+  print "*************************************************\n";
 }
 
 sub intersection {
@@ -204,6 +333,9 @@ AI::Categorize::Evaluate - Automate and compare AI::Categorize modules
      'data_dir'     => 'data',
     );
   
+  $e->add('AI::Categorize::SomethingElse',
+          'categories' => 'othercategories.txt');
+  
   $e->parse_training_data;
   $e->crunch;
   $e->categorize_test_set;
@@ -227,13 +359,20 @@ parameters may be passed to the C<new()> method as key/value pairs:
 
 =item * packages
 
-Required.  A list reference containing the names of the packages you
-wish to load and evaluate.  The modules will be automatically loaded by
-searching @INC.
+Optional.  A list reference containing the names of the packages you
+wish to load and schedule tests for.  The modules will be
+automatically loaded by searching @INC.  If you don't provide a list
+of packages, it's assumed that you'll add tests later by using the
+C<add()> method.
+
+=item * args
+
+An optional list of arguments that will be passed to the C<new()>
+method of each categorizer.
 
 =item * training_set
 
-Required for C<parse_training_data()>.  This parameter specifies the
+Required for running C<parse_training_data()>.  This parameter specifies the
 directory in which the training documents may be found.
 
 =item * test_set
@@ -250,9 +389,15 @@ a certain number of documents at random from the training set
 given either as a simple integer, or as a figure like C<5%> to use a
 certain percentage of the training documents.
 
+If you use C<test_size> to randomly select test documents from the
+training documents, you need to give this parameter from the very
+beginning (specifying in C<new()> or C<add()>, before calling
+C<parse_training_data()>), because otherwise your random test
+documents will be part of the training corpus - not a good thing.
+
 =item * categories
 
-Required for C<parse_training_data()> and C<categorize_test_set()>
+Required for the C<parse_training_data()> and C<categorize_test_set()>
 methods.  This parameter specifies the location of an existing text
 file which contains the mapping between categories and documents.  It
 should contain category information for all the training documents and
@@ -268,7 +413,8 @@ all the test documents.  The format of the file is as follows:
 The amount of whitespace separating document and category names is
 arbitrary.  Because of the format of the file, whitespace is not
 allowed in the document or category names (if this becomes a problem,
-perhaps Text::CSV could be used in the future).
+perhaps Text::CSV could be used in the future - or you could subclass
+this module and read the category file yourself ;-).
 
 =item * stopwords
 
@@ -276,22 +422,78 @@ Optional (default []).  A list of words to ignore when parsing and
 categorizing documents.  This will be passed to the stopwords() method
 of the individual categorizers.
 
-=item * data_dir
+=item * save
 
-Optional (default '.').  Specifies the directory in which large data
-files will be created during the evaluation process.
+Specifies the name of a file in which state will be saved after each
+stage of creating the categorizers.  This allows you to run one script
+that calls C<parse_training_data()> and C<crunch()>, then go away for
+a while, then run another script that calls C<categorize_test_set()>,
+picking up where it left off after the C<crunch()>.
+
+Specify a complete path/filename - some suffixes will be added to the
+filename to indicate which stage has been completed.
+
+I've implemented this a couple different ways so far, and I haven't
+really settled on a good interface yet, so the details may change.
 
 =back
 
+=head2 add($package, arg1=>val1, arg2=>val2, ...)
+
+Adds an additional test to the list of tests to be run.  The required
+first parameter is the module to use (it will be automatically
+loaded).  Any additional parameters will override the defaults you
+specified in the C<new()> method.  
+
+For example, you may want to run several tests of the C<kNN>
+classifier using different parameters for C<k>:
+
+  my $e = new AI::Categorize::Evaluate(
+     'training_set' => 'text_dir',
+     'test_set'     => 'test_dir',
+     'categories'   => 'categories.txt',
+     'stopwords'    => [qw(the a of to is that you for and)],
+     'data_dir'     => 'data',
+    );
+  $e->add('AI::Categorize::kNN', 'args' => [k => 10]);
+  $e->add('AI::Categorize::kNN', 'args' => [k => 20]);
+  $e->add('AI::Categorize::kNN', 'args' => [k => 30]);
+
+Since there was no C<packages> parameter to the C<new()> method, it
+didn't create any tests at that time, but it did set several default
+parameters for the tests that were created later using the C<add()>
+method.  The C<args> parameter to C<add()> overrode any C<args>
+parameter to C<new()> (but in this case there wasn't one).
 
 =head2 parse_training_data()
 
-Reads all the training documents and feeds them to the categorizers.  
+Reads all the training documents and feeds them to the categorizers so
+the categorization models can be built.
 
 =head2 crunch()
 
+Calls the C<crunch()> method for each categorizer.
+
 =head2 categorize_test_set()
 
+Feeds the test documents to each categorizer and reports the categorization results.
+
+=head1 CAVEATS
+
+The interface here isn't very stable at all.  I'm still experimenting
+to see which things are useful in general and which are dumb.  Things
+may go away, and because this is a testing module rather than
+something that provides core functionality (at least so far), I won't
+feel compelled to worry much about backward compatibility.
+
+=head1 TO DO
+
+Implement an 'iterations' mechanism through which one can test a
+categorizer several times with different test documents.  For example,
+you should be able to tell the Evaluate package to "run these two
+categorizers, using this corpus, with 10 random documents (or 10% of
+the documents) held out for test data, and repeat the procedure 10
+times."
 
 =head1 AUTHOR
 

@@ -1,5 +1,46 @@
 Revision history for Perl extension AI::Categorize::NaiveBayes.
 
+0.04
+  - Reworked the AI::Categorize::Evaluate module so that it much better 
+    addresses the issue of how to specify both general info for all tests 
+    and specific info for each test.  This makes it possible to test the results
+    of using different initialization parameters, for instance, or the results on
+    varying test sets.
+
+  - Made some changes to the way AI::Categorize::Evaluate stores its results
+    between stages of the testing.  This isn't stable yet.
+
+  - Added a testing summary at the end of AI::Categorize::Evaluate->evaluate_test_set.
+
+  - Created the 'drmath-1.00' corpus, which I'll use as a stable corpus for 
+    benchmarking the differences various changes to the code has.  It's large, 
+    so I'm not distributing it with the modules.  Write me if you want it.
+
+  - The kNN and NaiveBayes classifiers now trim their list of corpus features 
+    (words) to get rid of seldom-used features.  This can improve speed
+    and quality.  Preliminary results (using F1 as a quality measure) are:
+       corpus is drmath-1.00 with 12379 unique features.
+        kNN using 100% of features: F1=0.180, testing time=1384 sec
+        kNN using  20% of features: F1=0.178, testing time=1060 sec
+        kNN using  10% of features: F1=0.180  testing time=1050 sec
+        NB  using 100% of features: F1=0.037, testing time= 102 sec
+        NB  using  20% of features: F1=0.041, testing time=  72 sec
+        NB  using  10% of features: F1=0.039, testing time=  93 sec
+    See the 'features_kept' item in the kNN and NaiveBayes docs.
+
+  - Created the new AI::Categorize::VectorBased class, which kNN now inherits
+    from, and which can be a base class for other classifiers (like SVM, hint 
+    hint).
+
+  - Started to clean up print() statements throughout the code.  They give feedback
+    on training progress, but sometimes you probably don't want to see it.
+
+  - Moved the example script 'evaluate.pl' to the new 'eg/' directory, because
+    otherwise 'make install' would install it into site_perl/ .  If you installed
+    previous versions of AI::Categorize, you may want to remove 'evaluate.pl'
+    from your site_perl/ directory.
+
+
 0.03  Tue May 22 18:01:46 CDT 2001
    - First release to CPAN
    - Added 'make test' procedure

@@ -1,35 +1,23 @@
 package AI::Categorize::kNN;
 
 use strict;
-use AI::Categorize;
+use AI::Categorize::VectorBased;
 
 use vars qw(@ISA);
-@ISA = qw(AI::Categorize);
+@ISA = qw(AI::Categorize::VectorBased);
 
 sub new {
   my $package = shift;
   return $package->SUPER::new('k' => 20,
 			      'ratio_held_out' => 0.2,
+			      'features_kept' => 0.2,
 			      @_);
-}
-
-sub add_document {
-  my ($self, $document, $cats, $content) = @_;
-  
-  # Record the category information
-  $cats = [$cats] unless ref $cats;
-  $self->{category_map}->add_document($document, $cats);
-
-  $self->{stopwords} ||= $self->stopword_hash;
-  my $words = $self->extract_words($content);
-  
-  while (my ($word,$count) = each %$words) {
-    $self->{cache}{$document}{$word} = $count;
-  }
 }
 
 sub crunch {
   my ($self) = @_;
+
+  $self->trim_features($self->{features_kept}) if $self->{features_kept};
 
   # Normalize all document vectors
   foreach my $document (keys %{$self->{cache}}) {
@@ -51,12 +39,12 @@ sub learn_thresholds {
   my @all_docs = $self->{category_map}->documents;
 
   foreach my $cat (@all_cats) {
-    #print " ---Setting threshold: $cat => ";
+    print " ---Setting threshold: $cat => " if $self->{verbose};
     my @docs;
     my %docs = map {$_,1} (@docs = $self->{category_map}->documents_of($cat));
     my $num_held = int($self->{ratio_held_out} * @docs);
     if ($num_held < 2) {
-      #print "0.5 (default - insufficient data)\n";
+      print "0.5 (default - insufficient data)\n" if $self->{verbose};
       $self->{thresholds}{$cat} = 0.5;
       next;
     }
@@ -87,10 +75,10 @@ sub learn_thresholds {
     # Choose a threshold that maximizes F1
     $self->{thresholds}{$cat} = $self->maximize_F1(\%held, \%others);
     if ($self->{thresholds}{$cat}) {
-      #print "$self->{thresholds}{$cat}\n";
+      print "$self->{thresholds}{$cat}\n" if $self->{verbose};
     } else {
       # Guard against threshold of zero
-      #print "0.5 (default - found zero threshold)\n";
+      print "0.5 (default - found zero threshold)\n" if $self->{verbose};
       $self->{thresholds}{$cat} = 0.5;
     }
   }
@@ -116,23 +104,6 @@ sub maximize_F1 {
   return $best_thresh;
 }
 
-sub norm {
-  # Takes a hashref and figures out the norm of its *values* (hey, seems to be handy...)
-  my ($self, $href) = @_;
-  my $norm = 0;
-  foreach (values %$href) {$norm += $_**2 }
-  return sqrt($norm);
-}
-
-sub normalize {
-  # Normalizes the values.
-  my ($self, $href) = @_;
-  my $norm = $self->norm($href);
-  while (my ($key) = each %$href) {
-    $href->{$key} /= $norm;
-  }
-}
-
 sub get_scores {
   my ($self, %args) = @_;
   $args{avoid_docs} ||= {};
@@ -142,11 +113,7 @@ sub get_scores {
   local $|=1;
   while (my ($doc, $words) = each %{$self->{cache}}) {
     next if exists $args{avoid_docs}{$doc};
-    $doc_scores{$doc} = 0;
-    foreach (keys %$words) {
-      next unless $args{vector}{$_};
-      $doc_scores{$doc} += $words->{$_} * $args{vector}{$_};
-    }
+    $doc_scores{$doc} = $self->dot_product($words, $args{vector});
     #print "." unless $i++ % 5;
     #warn "$doc: $doc_scores{$doc}\n";
   }
@@ -269,7 +236,30 @@ We require that there be at least 2 documents in the held out set for
 each category.  If there aren't enough, some dumb default value will
 be used instead.
 
+=item * features_kept
+
+This parameter determines what portion of the features (words) from
+the training documents will be kept and what features will be
+discarded.  The parameter is a number between 0 and 1.  The default is
+0.2, indicating that 20% of the features will be kept.  To determine
+which features should be kept, we use the document-frequency
+criterion, in which we keep the features that appear in the greatest
+number of training documents.  This algorithm is simple to implement
+and reasonably effective.
+
+To keep all features, pass a C<features_kept> parameter of 0.
+
 =back
+
+=head1 TO DO
+
+Something seems screwy with the threshold-setting procedure.  It
+allows more categories to be assigned than it should, as evidenced by
+the fact that usually the top 1 or 2 scoring categories are correct,
+but additional false categories are thrown in too.  I think this is
+probably because the thresholds are set using a document set that
+doesn't reflect the category distribution of the training/testing
+copora.
 
 =head1 AUTHOR
 

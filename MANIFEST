@@ -2,10 +2,12 @@ Categorize.pm
 Changes
 MANIFEST
 Makefile.PL
+NOTES
 README
-evaluate.pl
+eg/evaluate.pl
 lib/AI/Categorize/Evaluate.pm
 lib/AI/Categorize/NaiveBayes.pm
+lib/AI/Categorize/VectorBased.pm
 lib/AI/Categorize/kNN.pm
 t/knn.t
 t/naive_bayes.t

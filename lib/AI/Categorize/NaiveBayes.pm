@@ -8,7 +8,8 @@ use vars qw(@ISA);
 
 sub new {
   my $package = shift;
-  return $package->SUPER::new(@_);
+  return $package->SUPER::new('features_kept' => 0.2,
+			      @_);
 }
 
 sub add_document {
@@ -24,12 +25,15 @@ sub add_document {
   foreach my $cat (@$cats) {
     while (my ($word, $count) = each %$words) {
       $self->{cache}{$cat}{$word} += $count;
+      $self->{docword}{$word}++;
     }
   }
 }
 
 sub crunch {
   my ($self) = @_;
+
+  $self->trim_features($self->{features_kept}) if $self->{features_kept};
   
   $self->{logtotal} = 0;
   foreach my $cat (keys %{$self->{cache}}) {
@@ -41,6 +45,26 @@ sub crunch {
     }
   }
   $self->{logtotal} = log($self->{logtotal});
+}
+
+sub trim_features {
+  my ($self, $target) = @_;
+  my $dw = $self->{docword};
+  my $num_words = keys %$dw;
+  print "Trimming features - total words = $num_words\n" if $self->{verbose};
+  
+  # Find the most-frequently-used words.
+  # This is algorithmic overkill, but the sort seems fast enough.
+  my @new_docword = (sort {$dw->{$b} <=> $dw->{$a}} keys %$dw)[0 .. $target*$num_words];
+  %$dw = map {$_,$dw->{$_}} @new_docword;
+
+  # Go through the corpus data, excise words that aren't in our reduced set.
+  while (my ($cat,$wordlist) = each %{$self->{cache}}) {
+    my %newlist = map { $dw->{$_} ? ($_, $wordlist->{$_}) : () } keys %$wordlist;
+    $self->{cache}{$cat} = {%newlist};
+  }
+
+  warn "Finished trimming features - words = " . @new_docword . "\n" if $self->{verbose};
 }
 
 sub total {
@@ -100,8 +124,36 @@ AI::Categorize::NaiveBayes - Naive Bayes Algorithm For AI::Categorize
 
 This is an implementation of the Naive Bayes decision-making
 algorithm, applied to the task of document categorization (as defined
-by the AI::Categorize module).  See L<AI::Categorize> for a
+by the AI::Categorize module).  See L<AI::Categorize> for a complete
 description of the interface.
+
+=head1 METHODS
+
+This class inherits from the C<AI::Categorize> class, so all of its
+methods are available unless explicitly mentioned here.
+
+=head2 new()
+
+The C<new()> method accepts several parameters that help determine the
+behavior of the categorizer.
+
+=over 4
+
+=item * features_kept
+
+This parameter determines what portion of the features (words) from
+the training documents will be kept and what features will be
+discarded.  The parameter is a number between 0 and 1.  The default is
+0.2, indicating that 20% of the features will be kept.  To determine
+which features should be kept, we use the document-frequency
+criterion, in which we keep the features that appear in the greatest
+number of training documents.  This algorithm is simple to implement
+and reasonably effective.
+
+To keep all features, pass a C<features_kept> parameter of 0.
+
+=back
+
 
 =head1 THEORY
 

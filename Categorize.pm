@@ -4,7 +4,7 @@ use Storable ();
 package AI::Categorize;
 
 use vars qw($VERSION);
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 sub new {
   my $package = shift;
@@ -365,6 +365,11 @@ thought about it some, and I have written these modules largely as a
 way to concretize my thinking and learn more about the processes.  If
 you know of ways to improve accuracy, please let me know.
 
+=head1 TO DO
+
+Idea from obvy: try tying into infobot (purl) to identify IRC moods: 
+@moods = qw(indifferent flame_mode pissed inebriated happy sad)
+
 =head1 AUTHOR
 
 Ken Williams, ken@forum.swarthmore.edu
@@ -382,5 +387,16 @@ perl(1), DBI(3).
 
 "A re-examination of text categorization methods" by Yiming Yang
 L<"http://www.cs.cmu.edu/~yiming/publications.html">
+
+Other links from Na'im Tyson:
+
+www.ruf.rice.edu/~barlow/corpus.html (corp. lx.)
+ciir.cs.umass.edu (info. ret)
+www.georgetown.edu/wilson/IR/IR.html (class in IR @ Georgetown University)
+www.research.att.com/~lewis (professional homepage
+  of David Lews, one of the leaders in document
+  categorization.  you may want to visit his site
+  sooner than the others since he has left AT&T research.)
+
 
 =cut

@@ -29,7 +29,7 @@ my $r = $c->categorize('I would like to begin farming sheep.');
 print "Categories: ", join(', ', $r->categories), "\n";
 &report_result(($r->categories)[0] eq 'farming');
 
-$r = $c->categorize("I see that many vampires may have eaten my beautiful daughter's blood.");
+$r = $c->categorize("I see many vampires may have eaten my blood.");
 print "Categories: ", join(', ', $r->categories), "\n";
 &report_result(($r->categories)[0] eq 'vampire');
 
