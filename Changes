@@ -1,5 +1,40 @@
 Revision history for Perl extension AI::Categorize::NaiveBayes.
 
+0.05
+
+
+  - Made lots of improvements to the NaiveBayes categorizer.  It was
+so bad as to be essentially useless before.  Now it is scoring better
+in F1, accuracy, and running time than the kNN categorizer on my
+standard test corpus.  This improvement came from studying Tom
+Mitchell's excellent book "Machine Learning".
+
+        01-NaiveBayes: F1=0.195  accuracy=0.981  time=  99 sec
+               02-kNN: F1=0.169  accuracy=0.889  time=1199 sec
+
+  - Increased the efficiency of the category map.  Added boolean
+is_in_category() and contains_document() methods.
+
+  - Fixed a bug in the AI::Categorize::Evaluate class in which
+default arguments weren't being passed properly to the created
+classes.
+
+  - Cleaned up the formatting of the AI::Categorize::Evaluate output,
+and added the accuracy score.
+
+  - Fixed a small problem in kNN in which it was using k-1 similar
+documents instead of k.
+
+  - Added an accuracy() and error() method to AI::Categorize.
+Calculates the accuracy/error over all binary category membership
+decisions.  Has the same interface as the previous F1() method.
+
+  - Fixed the F1() method to return 1 (perfect score) when you
+correctly assign zero categories.
+
+  - Added a cat_map() method to AI::Categorize class, which returns
+the AI::Categorize::Map object so you can query this information.
+
 0.04
   - Reworked the AI::Categorize::Evaluate module so that it much better 
     addresses the issue of how to specify both general info for all tests 

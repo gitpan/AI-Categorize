@@ -4,7 +4,7 @@ use Storable ();
 package AI::Categorize;
 
 use vars qw($VERSION);
-$VERSION = '0.04';
+$VERSION = '0.05';
 
 sub new {
   my $package = shift;
@@ -59,10 +59,28 @@ sub restore_state {
 
 sub F1 { # F1 = 2I/(A+C), I=Intersection, A=Assigned, C=Correct
   my ($self, $assigned, $correct) = @_;
+  return 1 unless @$assigned or @$correct;  # score 1 for correctly assigning zero categories
   my %correct = map {$_,1} @$correct;
   my $intersection = 0;
   foreach (@$assigned) {$intersection++ if exists $correct{$_}}
   return 2*$intersection / (@$assigned + @$correct);
+}
+
+sub accuracy {
+  # accuracy = 1-error, and error is easier to compute.
+  my $self = shift;
+  return 1-$self->error(@_);
+}
+
+# Returns the error rate among all binary decisions made over all categories.
+sub error {
+  my ($self, $assigned, $correct) = @_;
+  my %correct = map {$_,1} @$correct;
+  my %assigned = map {$_,1} @$assigned;
+  my $symmetric_diff = 0;
+  foreach (@$assigned) { $symmetric_diff++ unless exists $correct{$_}  }
+  foreach (@$correct ) { $symmetric_diff++ unless exists $assigned{$_} }
+  return $symmetric_diff / $self->cat_map->categories;
 }
 
 # Default noop
@@ -77,6 +95,7 @@ sub add_document {
   die sprintf "Class '%s' has not implemented the '%s' method.\n", ref $_[0], (caller(0))[3];
 }
 
+sub cat_map { shift->{category_map} }
 
 ###########################################################################
 package AI::Categorize::Result;
@@ -127,23 +146,33 @@ sub clear {
 sub add_document {
   my ($self, $doc, $cats) = @_;
   foreach my $cat (@$cats) {
-    push @{$self->{by_cat}{$cat}}, $doc;
+    $self->{by_cat}{$cat}{$doc} = undef;
   }
-  @{$self->{by_doc}{$doc}} = @$cats;
+  @{$self->{by_doc}{$doc}}{@$cats} = ();
+}
+
+sub is_in_category {
+  my ($self, $doc, $cat) = @_;
+  return exists $self->{by_doc}{$doc}{$cat};
+}
+
+sub contains_document {
+  my ($self, $cat, $doc) = @_;
+  return exists $self->{by_cat}{$cat}{$doc};
 }
 
 sub documents_of {
   my ($self, $cat) = @_;
-  return @{$self->{by_cat}{$cat} ||= []};
+  return keys %{$self->{by_cat}{$cat} ||= {}};
 }
 
 sub categories_of {
   my ($self, $doc) = @_;
-  return @{$self->{by_doc}{$doc} ||= []};
+  return keys %{$self->{by_doc}{$doc} ||= {}};
 }
 
-sub categories { return keys %{shift()->{by_cat}} }
-sub documents  { return keys %{shift()->{by_doc}} }
+sub categories { return keys %{$_[0]->{by_cat}} }
+sub documents  { return keys %{$_[0]->{by_doc}} }
 
 1;
 
@@ -268,6 +297,11 @@ the C<AI::Categorize::Result> class (hereafter abbreviated as C<$r>).
 To ease memory requirements, in the future C<$content> may be allowed
 to be passed as a filehandle.
 
+=item * $c->cat_map()
+
+Returns the 'category map' object, which is an object of the class
+C<AI::Categorize::Map>.  See the documentation for this class below.
+
 =item * $c->save_state($filename)
 
 At any time you may save the state of the categorizer to a file, so
@@ -277,6 +311,30 @@ that you can reload it later using the C<restore_state()> method.
 
 Reads in the categorizer data from $filename, which should have
 previously been saved using the C<save_state()> method.
+
+=item * $c->error(\@assigned_categories, \@correct_categories)
+
+Returns the fraction of the binary (yes/no) categorization decisions
+that were incorrect.  For instance, if there are 4 entries in
+C<@assigned_categories>, 5 entries in C<@correct_categories>, 2 of
+those catagories overlap, and there are a total of 20 categories to
+choose from, then the error is C<(2+3)/20 = 5/20 = 0.25>.  In this
+case, 2 errors of false assignment were made, and 3 errors of
+omission were made.
+
+The accuracy and error will always have a sum of 1.
+
+=item * $c->accuracy(\@assigned_categories, \@correct_categories)
+
+Returns the fraction of the binary (yes/no) categorization decisions
+that were correct.  For instance, if there are 4 entries in
+C<@assigned_categories>, 5 entries in C<@correct_categories>, 2 of
+those catagories overlap, and there are a total of 20 categories to
+choose from, then the accuracy is C<(2+13)/20 = 15/20 = 0.75>.  In
+this case, 2 correct assignments were made, and 13 categories were
+correctly omitted.
+
+The accuracy and error will always have a sum of 1.
 
 =item * $c->F1(\@assigned_categories, \@correct_categories)
 
@@ -320,7 +378,7 @@ single entry in the categorizer.
 
 =back
 
-=head1 AI::Categorize::Result Methods
+=head1 C<AI::Categorize::Result> Methods
 
 An C<AI::Categorize::Result> object is returned by the
 C<$c-E<gt>categorize> method, described above.
@@ -349,6 +407,60 @@ between.
 Please consider the scoring feature somewhat unstable for now.
 
 =back
+
+=head1 C<AI::Categorize::Map> Methods
+
+The C<AI::Categorize::Map> class manages the relationships between
+documents and categories.  It is designed to support fast lookups
+either by category or by document.  An C<AI::Categorize::Map> object
+is returned by the C<$c-E<gt>cat_map> method (described above) and
+will be called C<$m> for convenience in this documentation.
+
+In general, feel free to make any queries of the map, but don't make
+any changes to its data.  Changes should usually only be made through
+the categorizer object.
+
+=over 4
+
+=item * $m->add_document($doc_name, \@cat_names)
+
+Adds the given document to the map with membership in the given
+categories.  The C<AI::Categorize> C<add_document()> method calls this
+internally.
+
+=item * $m->categories()
+
+Returns a list of all known categories in a list context, or the
+number of known categories in a scalar context.
+
+=item * $m->documents()
+
+Returns a list of all known categories in a list context, or the
+number of known categories in a scalar context.
+
+=item * $m->categories_of($doc_name)
+
+Returns a list of categories that C<$doc_name> belongs to in a list
+context, or the number of such categories in a scalar context.
+
+=item * $m->documents_of($cat_name)
+
+Returns a list of documents that C<$cat_name> contains in a list
+context, or the number of such documents in a scalar context.
+
+=item * $m->is_in_category($doc_name, $cat_name)
+
+Returns true if C<$doc_name> belongs to the C<$cat_name> category, or
+false otherwise.
+
+=item * $m->contains_document($cat_name, $doc_name)
+
+Returns true if C<$cat_name> contains the document C<$doc_name>, or
+false otherwise.  Note that this is just a synonym for the
+C<is_in_category()> method with the names turned around.
+
+=back
+
 
 =head1 CAVEATS
 

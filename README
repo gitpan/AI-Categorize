@@ -102,6 +102,10 @@ AI::Categorize Methods
         To ease memory requirements, in the future `$content' may be allowed
         to be passed as a filehandle.
 
+    * $c->cat_map()
+        Returns the 'category map' object, which is an object of the class
+        `AI::Categorize::Map'. See the documentation for this class below.
+
     * $c->save_state($filename)
         At any time you may save the state of the categorizer to a file, so
         that you can reload it later using the `restore_state()' method.
@@ -109,6 +113,28 @@ AI::Categorize Methods
     * $c->restore_state($filename)
         Reads in the categorizer data from $filename, which should have
         previously been saved using the `save_state()' method.
+
+    * $c->error(\@assigned_categories, \@correct_categories)
+        Returns the fraction of the binary (yes/no) categorization decisions
+        that were incorrect. For instance, if there are 4 entries in
+        `@assigned_categories', 5 entries in `@correct_categories', 2 of
+        those catagories overlap, and there are a total of 20 categories to
+        choose from, then the error is `(2+3)/20 = 5/20 = 0.25'. In this
+        case, 2 errors of false assignment were made, and 3 errors of
+        omission were made.
+
+        The accuracy and error will always have a sum of 1.
+
+    * $c->accuracy(\@assigned_categories, \@correct_categories)
+        Returns the fraction of the binary (yes/no) categorization decisions
+        that were correct. For instance, if there are 4 entries in
+        `@assigned_categories', 5 entries in `@correct_categories', 2 of
+        those catagories overlap, and there are a total of 20 categories to
+        choose from, then the accuracy is `(2+13)/20 = 15/20 = 0.75'. In
+        this case, 2 correct assignments were made, and 13 categories were
+        correctly omitted.
+
+        The accuracy and error will always have a sum of 1.
 
     * $c->F1(\@assigned_categories, \@correct_categories)
         This method computes the F1 measure, which is helpful for evaluating
@@ -149,7 +175,7 @@ AI::Categorize Methods
         "abominably", "abominate", "abomination", and "abominator" all share
         a single entry in the categorizer.
 
-AI::Categorize::Result Methods
+`AI::Categorize::Result' Methods
     An `AI::Categorize::Result' object is returned by the `$c->categorize'
     method, described above.
 
@@ -171,6 +197,47 @@ AI::Categorize::Result Methods
 
         Please consider the scoring feature somewhat unstable for now.
 
+`AI::Categorize::Map' Methods
+    The `AI::Categorize::Map' class manages the relationships between
+    documents and categories. It is designed to support fast lookups either
+    by category or by document. An `AI::Categorize::Map' object is returned
+    by the `$c->cat_map' method (described above) and will be called `$m'
+    for convenience in this documentation.
+
+    In general, feel free to make any queries of the map, but don't make any
+    changes to its data. Changes should usually only be made through the
+    categorizer object.
+
+    * $m->add_document($doc_name, \@cat_names)
+        Adds the given document to the map with membership in the given
+        categories. The `AI::Categorize' `add_document()' method calls this
+        internally.
+
+    * $m->categories()
+        Returns a list of all known categories in a list context, or the
+        number of known categories in a scalar context.
+
+    * $m->documents()
+        Returns a list of all known categories in a list context, or the
+        number of known categories in a scalar context.
+
+    * $m->categories_of($doc_name)
+        Returns a list of categories that `$doc_name' belongs to in a list
+        context, or the number of such categories in a scalar context.
+
+    * $m->documents_of($cat_name)
+        Returns a list of documents that `$cat_name' contains in a list
+        context, or the number of such documents in a scalar context.
+
+    * $m->is_in_category($doc_name, $cat_name)
+        Returns true if `$doc_name' belongs to the `$cat_name' category, or
+        false otherwise.
+
+    * $m->contains_document($cat_name, $doc_name)
+        Returns true if `$cat_name' contains the document `$doc_name', or
+        false otherwise. Note that this is just a synonym for the
+        `is_in_category()' method with the names turned around.
+
 CAVEATS
     Don't depend on the specific scores given by `$r->scores'. They may
     change in future releases.
@@ -184,6 +251,10 @@ CAVEATS
     about it some, and I have written these modules largely as a way to
     concretize my thinking and learn more about the processes. If you know
     of ways to improve accuracy, please let me know.
+
+TO DO
+    Idea from obvy: try tying into infobot (purl) to identify IRC moods:
+    @moods = qw(indifferent flame_mode pissed inebriated happy sad)
 
 AUTHOR
     Ken Williams, ken@forum.swarthmore.edu
@@ -199,4 +270,13 @@ SEE ALSO
 
     "A re-examination of text categorization methods" by Yiming Yang the
     section on "http://www.cs.cmu.edu/~yiming/publications.html"
+
+    Other links from Na'im Tyson:
+
+    www.ruf.rice.edu/~barlow/corpus.html (corp. lx.) ciir.cs.umass.edu
+    (info. ret) www.georgetown.edu/wilson/IR/IR.html (class in IR @
+    Georgetown University) www.research.att.com/~lewis (professional
+    homepage of David Lews, one of the leaders in document categorization.
+    you may want to visit his site sooner than the others since he has left
+    AT&T research.)
 

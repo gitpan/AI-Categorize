@@ -23,6 +23,7 @@ sub add_document {
 }
 
 sub trim_features {
+  # This uses a simple document-frequency criterion.  Other criteria may follow later.
   my ($self, $target) = @_;
   my $dw = $self->{docword};
   my $num_words = keys %$dw;
@@ -31,6 +32,7 @@ sub trim_features {
   # This is algorithmic overkill, but the sort seems fast enough.
   my @new_docword = (sort {$dw->{$b} <=> $dw->{$a}} keys %$dw)[0 .. $target*$num_words];
   
+  $self->{wordlist} = [sort @new_docword];
   %$dw = map {$_,$dw->{$_}} @new_docword;
 
   while (my ($doc,$wordlist) = each %{$self->{cache}}) {

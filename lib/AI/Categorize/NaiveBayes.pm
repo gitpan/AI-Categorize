@@ -24,56 +24,53 @@ sub add_document {
   
   foreach my $cat (@$cats) {
     while (my ($word, $count) = each %$words) {
-      $self->{cache}{$cat}{$word} += $count;
+      $self->{count}{$cat}{$word} += $count;
       $self->{docword}{$word}++;
     }
   }
 }
+
+# Number of times word $w appears with category $c:(Nk)  $self->{count}{$c}{$w}  (until crunch())
 
 sub crunch {
   my ($self) = @_;
 
   $self->trim_features($self->{features_kept}) if $self->{features_kept};
   
-  $self->{logtotal} = 0;
-  foreach my $cat (keys %{$self->{cache}}) {
-    my $total = $self->total($self->{cache}{$cat});
-    $self->{categories}{$cat}{logcount} = log($total);
-    $self->{logtotal} += $total;
-    foreach my $word (keys %{$self->{cache}{$cat}}) {
-      $self->{cache}{$cat}{$word} = log($self->{cache}{$cat}{$word}/$total);
+  my $vocabulary = $self->total_types;
+  
+  my $totaldocs = $self->cat_map->documents;
+  foreach my $cat (keys %{$self->{count}}) {
+    $self->{catprob}{$cat} = log($self->cat_map->documents_of($cat) / $totaldocs);
+
+    # Count the number of tokens in this cat
+    $self->{tokens}{$cat} = $self->cat_tokens($cat);
+
+    my $denominator = log($self->{tokens}{$cat} + $vocabulary);
+    while (my ($word, $count) = each %{$self->{count}{$cat}}) {
+      $self->{total_tokens} += $count;
+      $self->{probs}{$cat}{$word} = log($self->{count}{$cat}{$word} + 1) - $denominator;
     }
   }
-  $self->{logtotal} = log($self->{logtotal});
 }
 
-sub trim_features {
-  my ($self, $target) = @_;
-  my $dw = $self->{docword};
-  my $num_words = keys %$dw;
-  print "Trimming features - total words = $num_words\n" if $self->{verbose};
-  
-  # Find the most-frequently-used words.
-  # This is algorithmic overkill, but the sort seems fast enough.
-  my @new_docword = (sort {$dw->{$b} <=> $dw->{$a}} keys %$dw)[0 .. $target*$num_words];
-  %$dw = map {$_,$dw->{$_}} @new_docword;
+sub total_types { keys %{shift->{docword}} }
 
-  # Go through the corpus data, excise words that aren't in our reduced set.
-  while (my ($cat,$wordlist) = each %{$self->{cache}}) {
-    my %newlist = map { $dw->{$_} ? ($_, $wordlist->{$_}) : () } keys %$wordlist;
-    $self->{cache}{$cat} = {%newlist};
-  }
-
-  warn "Finished trimming features - words = " . @new_docword . "\n" if $self->{verbose};
-}
-
-sub total {
-  # Takes a hashref and figures out the total of its *values* (hey, seems to be handy...)
-  my ($self, $href) = @_;
+sub cat_tokens {
+  my ($self, $cat) = @_;
   my $total = 0;
-  foreach (values %$href) {$total += $_}
+  $total += $_ for values %{$self->{count}{$cat}};
   return $total;
 }
+
+# Total number of words (types)  in all docs: (V)        keys %{$self->{docword}} or $self->total_types
+# Total number of words (tokens) in all docs:            $self->{total_tokens} or sum values $self->{docword}
+# Total number of words (types)  in category $c:         keys %{$self->{count}{$cat}}
+# Total number of words (tokens) in category $c:(N)      $self->{tokens}{$c}
+
+# Logprobs:
+# P($cat) = $self->{catprob}{$cat}
+# P($word|$cat) = $self->{count}{$cat}{$word}
 
 sub categorize {
   my $self = shift;
@@ -84,25 +81,68 @@ sub categorize {
   my $i;
   local $|=1;
   my %scores;
-  while (my ($cat,$words) = each %{$self->{cache}}) {
-    my $fake_prob = log(0.5) - $self->{categories}{$cat}{logcount}; # Like a very infrequent word
-    $scores{$cat} = $self->{categories}{$cat}{logcount} - $self->{logtotal};
+  while (my ($cat,$words) = each %{$self->{count}}) {
+    my $fake_prob = -log($self->{tokens}{$cat} + keys %{$self->{docword}}); # Like a very infrequent word
+    $scores{$cat} = $self->{catprob}{$cat}; # P($cat)
     
     while (my ($word, $count) = each %$newdoc) {
-      $scores{$cat} += ($words->{$word} || $fake_prob)*$count;
+      #next unless $words->{$word};
+      #$scores{$cat} += $words->{$word}*$count; # P(word|cat)
+      $scores{$cat} += ($words->{$word} || $fake_prob)*$count; # P(word|cat)
     }
-    #print "$cat: $scores{$cat}\n";
-    #print "." unless $i++ % 5;
+    
+    # Convert back from log(prob) to prob
+    $scores{$cat} = exp $scores{$cat};
   }
 
-  my $num_words = keys %$newdoc;
-  my $avg_prob  = -6.82884235791492; # For now
-  my $threshold = $num_words * $avg_prob;
-  #print "num_words: $num_words\nthreshold: $threshold\n";
+  $self->normalize(\%scores);
+#    if ($self->{verbose}) {
+#      foreach my $key (sort {$scores{$b} <=> $scores{$a}} keys %scores) {
+#        print "$key: $scores{$key}\n";
+#      }
+#    }
   
   return $self->{results_class}->new(scores => \%scores,
-				     threshold => $threshold);
+				     threshold => 0.5,
+				    );
 }
+
+sub trim_features {
+  # Trims $self->{count} and $self->{docword}
+  
+  my ($self, $target) = @_;
+  my $dw = $self->{docword};
+  my $num_words = keys %$dw;
+  print "Trimming features - total types = $num_words\n" if $self->{verbose};
+  
+  # Find the most-frequently-used words.
+  # This is algorithmic overkill, but the sort seems fast enough.
+  my @new_docword = (sort {$dw->{$b} <=> $dw->{$a}} keys %$dw)[0 .. $target*$num_words];
+  %$dw = map {$_,$dw->{$_}} @new_docword;
+
+  # Go through the corpus data, excise words that aren't in our reduced set.
+  while (my ($cat,$wordlist) = each %{$self->{count}}) {
+    my %newlist = map { $dw->{$_} ? ($_, $wordlist->{$_}) : () } keys %$wordlist;
+    $self->{count}{$cat} = {%newlist};
+  }
+
+  warn "Finished trimming features - types = " . @new_docword . "\n" if $self->{verbose};
+}
+
+sub normalize {
+  # An arbitrary normalization - make sure they add up to 1, as if
+  # they were probabilities filling the entire probability space without overlap.
+  my ($self, $scores) = @_;
+  my $total = 0;
+  while (my ($key) = each %$scores) {
+    $total += $scores->{$key};
+  }
+  return unless $total;
+  while (my ($key) = each %$scores) {
+    $scores->{$key} /= $total;
+  }
+}
+
 
 1;
 
@@ -230,6 +270,12 @@ number.  This could pose problems of floating-point underflow, so
 instead of working with the actual probabilities we work with the
 logarithms of the probabilities.  This also speeds up various
 calculations in the C<categorize()> method.
+
+=head1 TO DO
+
+More work on the confidence scores - right now the winning category
+tends to dominate the scores overwhelmingly, when the scores should
+probably be more evenly distributed.
 
 =head1 AUTHOR
 

@@ -118,7 +118,7 @@ sub get_scores {
     #warn "$doc: $doc_scores{$doc}\n";
   }
   
-  my $limit = $self->{k} > keys %doc_scores ? keys %doc_scores : $self->{k}-1;
+  my $limit = $self->{k} > keys %doc_scores ? keys %doc_scores : $self->{k};
   my @top_k_docs = (sort {$doc_scores{$b} <=> $doc_scores{$a}} keys %doc_scores)[0..$limit-1];
   
   my %scores;

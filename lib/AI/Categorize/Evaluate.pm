@@ -73,7 +73,7 @@ sub add {
   push @{$self->{tests}}, $new_test = $self->new_instance($self->{defaults}, %args);
   $new_test->{pkg} = $pkg;
   $new_test->{name} = sprintf("%02d-", scalar @{$self->{tests}}) . $self->shortname($pkg);
-  $new_test->{args} = $args{args} || [];
+  $new_test->{args} ||= [];
   $new_test->{c} = $pkg->new(@{$new_test->{args}});
 
   return $new_test;
@@ -103,7 +103,7 @@ sub new_instance {
     elsif ($default) { $struct->{$_} = $default->{$_}              }
   }
 
-  for ('stopwords') {
+  for ('stopwords', 'args') {
     if ($args{$_})   { $struct->{$_} = $args{$_}      }
     elsif ($default) { $struct->{$_} = $default->{$_} }
   }
@@ -256,7 +256,7 @@ sub categorize_test_set {
     my $c = $test->{c};
     
     my $num_tests = keys %{$test->{test_docs}};
-    my $F1_total = 0;
+    my ($F1_total, $accuracy_total) = (0,0);
     while (my ($path) = each %{$test->{test_docs}}) {
       (my $file = $path) =~ s#.*/##;
       print " Categorizing '$file': ";
@@ -270,38 +270,41 @@ sub categorize_test_set {
       my $real_cats = $test->{categories}{$file} || [];
 
       if ($self->{verbose}) {
-	print "\n";
+	print "\nAssigned Categories:\n";
 	foreach (0..$#cats) {
 	  print "   $cats[$_]: $scores[$_]\n";
 	}
-	print "\nReal Categories:\n";
+	print "Real Categories:\n";
 	
 	warn "Warning: no categories found for document '$file'\n" unless $test->{categories}{$file};
 	foreach (@$real_cats) {
-	  print "  + $_\n";
+	  print "   $_\n";
 	}
       }
       
       my $F1 = $c->F1(\@cats, $real_cats);
-      print "F1 = $F1\n";
+      my $accuracy = $c->accuracy(\@cats, $real_cats);
+      print "F1 = $F1, accuracy = $accuracy\n";
       $F1_total += $F1;
+      $accuracy_total += $accuracy;
       
       print "-----------\n\n" if $self->{verbose};
       $i++;
     }
     $test->{results}{F1} = $F1_total/$num_tests;
+    $test->{results}{accuracy} = $accuracy_total/$num_tests;
     printf "Average F1 score: %.3f\n", $test->{results}{F1};
     my $end = new Benchmark;
     $test->{results}{time} = 0 + timestr(timediff($end, $start));
     print "\nRunning time: ", timestr(timediff($end, $start)), " for $i documents.\n";
   }
 
-  print "******************* Summary *********************\n";
+  print "******************* Summary *************************************\n";
   foreach my $test (@{$self->{tests}}) {
-    printf("* %20s: F1=%.3f  time=%4d sec *\n", 
-	   $test->{name}, $test->{results}{F1}, $test->{results}{time});
+    printf("* %20s: F1=%.3f  accuracy=%.3f  time=%4d sec *\n", 
+	   $test->{name}, $test->{results}{F1}, $test->{results}{accuracy}, $test->{results}{time});
   }
-  print "*************************************************\n";
+  print "*****************************************************************\n";
 }
 
 sub intersection {
