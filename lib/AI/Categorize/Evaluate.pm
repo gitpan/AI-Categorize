@@ -106,6 +106,7 @@ sub new_instance {
   for ('stopwords', 'args') {
     if ($args{$_})   { $struct->{$_} = $args{$_}      }
     elsif ($default) { $struct->{$_} = $default->{$_} }
+    else             { $struct->{$_} = []             }
   }
 
   return $struct;
@@ -154,8 +155,6 @@ sub read_dir {
   opendir DIR, $dir or die "Can't open directory '$dir': $!";
   return [ map {"$dir/$_"} grep {!/^\./} readdir DIR ];
 }
-
-sub types { keys %{shift->{pkgs}} }
 
 sub parse_training_data {
   my ($self) = @_;
@@ -211,7 +210,7 @@ sub save {
   (my $subname = (caller(1))[3]) =~ s/.*:://;
   my $file = "$self->{save}-$subname";
   warn "Saving $file\n";
-  Storable::store($self, $file);
+  Storable::store($self->{tests}, $file);
 }
 
 sub load {
@@ -220,7 +219,7 @@ sub load {
   
   my $file = "$self->{save}-$prev";
   warn "Loading $file\n";
-  %$self = %{Storable::retrieve($file)};
+  $self->{tests} = Storable::retrieve($file);
 }
 
 sub crunch {
@@ -234,7 +233,7 @@ sub crunch {
     my $start = new Benchmark;
     print "\n$test->{name}:\n";
     my $c = $test->{c};
-    $c->{verbose} = 1;
+    $c->{verbose} = $self->{verbose};
     $c->crunch;
     my $end = new Benchmark;
     print "\nRunning time: ", timestr(timediff($end, $start)), "\n";
@@ -256,7 +255,8 @@ sub categorize_test_set {
     my $c = $test->{c};
     
     my $num_tests = keys %{$test->{test_docs}};
-    my ($F1_total, $accuracy_total) = (0,0);
+    my %ratings = map {$_ => 0} qw(F1 error recall precision);
+
     while (my ($path) = each %{$test->{test_docs}}) {
       (my $file = $path) =~ s#.*/##;
       print " Categorizing '$file': ";
@@ -281,30 +281,38 @@ sub categorize_test_set {
 	  print "   $_\n";
 	}
       }
-      
-      my $F1 = $c->F1(\@cats, $real_cats);
-      my $accuracy = $c->accuracy(\@cats, $real_cats);
-      print "F1 = $F1, accuracy = $accuracy\n";
-      $F1_total += $F1;
-      $accuracy_total += $accuracy;
+
+      foreach my $method (keys %ratings) {
+	my $value = $c->$method(\@cats, $real_cats);
+	print "$method = $value, ";
+	$ratings{$method} += $value;
+      }
+      print "\n";
       
       print "-----------\n\n" if $self->{verbose};
       $i++;
     }
-    $test->{results}{F1} = $F1_total/$num_tests;
-    $test->{results}{accuracy} = $accuracy_total/$num_tests;
-    printf "Average F1 score: %.3f\n", $test->{results}{F1};
+
+    foreach my $method (keys %ratings) {
+      $ratings{$method} /= $num_tests;
+    }
+    $test->{results} = {%ratings};
+
     my $end = new Benchmark;
     $test->{results}{time} = 0 + timestr(timediff($end, $start));
     print "\nRunning time: ", timestr(timediff($end, $start)), " for $i documents.\n";
   }
 
   print "******************* Summary *************************************\n";
+  print "*        Name         miR   miP   miF1  error      time         *\n";
   foreach my $test (@{$self->{tests}}) {
-    printf("* %20s: F1=%.3f  accuracy=%.3f  time=%4d sec *\n", 
-	   $test->{name}, $test->{results}{F1}, $test->{results}{accuracy}, $test->{results}{time});
+    printf("* %15s:   %.3f %.3f %.3f  %.3f    %4d sec       *\n",
+	   $test->{name}, @{$test->{results}}{qw(recall precision F1 error)}, $test->{results}{time});
   }
-  print "*****************************************************************\n";
+  print ("*****************************************************************\n",
+	 "*  miR = micro-avg. recall         miP = micro-avg. precision   *\n",
+	 "*  miF = micro-avg. F1           error = micro-avg. error rate  *\n",
+	 "*****************************************************************\n");
 }
 
 sub intersection {

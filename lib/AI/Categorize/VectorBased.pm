@@ -40,7 +40,7 @@ sub trim_features {
     $self->{cache}{$doc} = {%newlist};
   }
 
-  warn "Finished trimming features - words = " . @new_docword . "\n" if $self->{verbose};
+  print "Finished trimming features - words = " . @new_docword . "\n" if $self->{verbose};
 }
 
 
@@ -81,6 +81,7 @@ AI::Categorize::VectorBased - Base class for other algorithms
 
 =head1 SYNOPSIS
 
+  package Some::Other::Categorizer;
   use AI::Categorize::VectorBased;
   @ISA = qw(AI::Categorize::VectorBased);
   ...
@@ -99,39 +100,47 @@ parent and child classes.
 
 =head1 METHODS
 
-=over 4
-
-The C<AI::Categorize::kNN> class inherits from the C<AI::Categorize>
-class, so all of its methods are available unless explicitly mentioned
-here.
-
-=head2 new()
-
-The C<new()> method accepts several parameters that help determine the
-behavior of the categorizer.
+The following methods are provided.
 
 =over 4
 
-=item * k
+=item * dot_product(\%hash1, \%hash2)
 
-This is the C<k> in k-Nearest-Neigbor.  It is the number of similar
-documents to consider during the C<categorize()> method.  The default
-value is 20.  Experiment to find out a value that suits your needs.
+Treats C<%hash1> and C<%hash2> as vectors, where the keys represent
+the vector coordinates and the values represent the coordinate values,
+and returns the dot product of the two vectors.
 
-=item * ratio_held_out
+For instance, if C<%hash1> contains C<< (x=>4, y=>5) >> and C<%hash2>
+contains C<< (x=>2, y=>7) >>, then C<dot_product(\%hash1, \%hash2)>
+will return C<4*2+5*7>, i.e. C<43>.  If any keys are present in one
+hash but not the other, they will be treated as if they have the value
+zero in the hash where they are nonexistant.  So if C<%hash1> contains
+C<< (x=>4, y=>5) >> and C<%hash2> contains C<< (y=>1, z=>6) >>, then 
+C<dot_product(\%hash1, \%hash2)> will return C<5*1>, i.e. C<5>.
 
-This is the portion of the training corpus that will be used to
-determine the per-category membership threshold.  The default value is
-0.2, which means that for each category 80% of the training documents
-will be parsed, then the remaining 20% will be used to determine the
-threshold.  The threshold will be set to a value that maximizes F1 on
-the held out data (see L<AI::Categorize/F1>).
+Perl is actually pretty good at doing dot products, because the
+intersection of the set of keys of two hashes can be found very
+quickly.
 
-We require that there be at least 2 documents in the held out set for
-each category.  If there aren't enough, some dumb default value will
-be used instead.
+=item * norm(\%hash)
 
-=back
+Returns the Euclidean norm of the values of C<%hash>, i.e. 
+C<sqrt(sum(values %hash)>.
+
+=item * normalize(\%hash)
+
+Divides each value in C<%hash> by C<norm(\%hash)>.
+
+=item * trim_features($target)
+
+Reduces the number of features (words) considered in the training
+data.  We try to find the "best" features, i.e. the ones that will
+help us the most when we try to categorize documents later.  Right now
+we just use a "Document Frequency" criterion, which means we keep the
+features that appear in the most documents.  This is surprisingly
+reasonable considering its simplicity, as shown in Yiming Yang's paper
+"A Comparative Study on Feature Selection in Text Categorization"
+(http://www-2.cs.cmu.edu/~yiming/publications.html).
 
 =head1 AUTHOR
 
@@ -148,7 +157,5 @@ modify it under the same terms as Perl itself.
 
 AI::Categorize(3)
 
-"A re-examination of text categorization methods" by Yiming Yang
-L<http://www.cs.cmu.edu/~yiming/publications.html>
-
 =cut
+

@@ -5,7 +5,11 @@
 use lib 'blib/lib';
 use AI::Categorize::Evaluate;
 
-my $data_dir = 'corpora/drmath-1.00';
+my $data_dir = 
+  'corpora/drmath-1.00'
+  #'corpora/drmath-1.00-small'
+  #'corpora/reuters-21578'
+;
 
 my @stopwords = `cat $data_dir/SMART.stoplist`;
 chomp @stopwords;
@@ -30,7 +34,7 @@ my $e = new AI::Categorize::Evaluate
 #$e->add('AI::Categorize::kNN', args => [features_kept => 0.1]);
 
 
-$e->parse_training_data;
+#$e->parse_training_data;
 #$e->show_test_docs;
-$e->crunch;
+#$e->crunch;
 $e->categorize_test_set;

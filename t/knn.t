@@ -44,21 +44,3 @@ sub report_result {
   print $_[0] if ($bad and $ENV{TEST_VERBOSE});
 }
 
-__END__
-
-my $dir = 'text';
-opendir DIR, $dir or die $!;
-while (my $file = readdir DIR) {
-  
-
-  next if $file =~ /^\.+$/;
-  open FILE, "$dir/$file" or die "$dir/$file: $!";
-
-  $file =~ s/\.txt$//;
-  my $cats = $dbh->selectcol_arrayref("SELECT category FROM bayes_old.cat_map WHERE document=?",undef, $file);
-  warn "No cats for $file" unless @$cats;
-
-#  $c->add_document($file, $cats, join '', <FILE>);
-#  print ".\n" unless $i++ % 100;
-}
-

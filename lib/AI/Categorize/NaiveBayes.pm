@@ -9,6 +9,7 @@ use vars qw(@ISA);
 sub new {
   my $package = shift;
   return $package->SUPER::new('features_kept' => 0.2,
+			      'threshold' => 0.3,
 			      @_);
 }
 
@@ -70,7 +71,7 @@ sub cat_tokens {
 
 # Logprobs:
 # P($cat) = $self->{catprob}{$cat}
-# P($word|$cat) = $self->{count}{$cat}{$word}
+# P($word|$cat) = $self->{probs}{$cat}{$word}
 
 sub categorize {
   my $self = shift;
@@ -81,14 +82,15 @@ sub categorize {
   my $i;
   local $|=1;
   my %scores;
-  while (my ($cat,$words) = each %{$self->{count}}) {
-    my $fake_prob = -log($self->{tokens}{$cat} + keys %{$self->{docword}}); # Like a very infrequent word
+  while (my ($cat,$words) = each %{$self->{probs}}) {
+    my $fake_prob = -log($self->{tokens}{$cat} + $self->total_types); # Like a very infrequent word
+
     $scores{$cat} = $self->{catprob}{$cat}; # P($cat)
     
     while (my ($word, $count) = each %$newdoc) {
       #next unless $words->{$word};
       #$scores{$cat} += $words->{$word}*$count; # P(word|cat)
-      $scores{$cat} += ($words->{$word} || $fake_prob)*$count; # P(word|cat)
+      $scores{$cat} += ($words->{$word} || $fake_prob)*$count; # P($word|$cat)
     }
     
     # Convert back from log(prob) to prob
@@ -101,9 +103,9 @@ sub categorize {
 #        print "$key: $scores{$key}\n";
 #      }
 #    }
-  
+
   return $self->{results_class}->new(scores => \%scores,
-				     threshold => 0.5,
+				     threshold => $self->{threshold},
 				    );
 }
 
@@ -191,6 +193,12 @@ number of training documents.  This algorithm is simple to implement
 and reasonably effective.
 
 To keep all features, pass a C<features_kept> parameter of 0.
+
+=item * threshold
+
+Sets the score threshold for category membership.  The default is
+currently 0.3.  Set the threshold lower to assign more categories per
+document, set it higher to assign fewer.
 
 =back
 

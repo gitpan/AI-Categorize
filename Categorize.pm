@@ -4,7 +4,7 @@ use Storable ();
 package AI::Categorize;
 
 use vars qw($VERSION);
-$VERSION = '0.05';
+$VERSION = '0.06';
 
 sub new {
   my $package = shift;
@@ -60,10 +60,23 @@ sub restore_state {
 sub F1 { # F1 = 2I/(A+C), I=Intersection, A=Assigned, C=Correct
   my ($self, $assigned, $correct) = @_;
   return 1 unless @$assigned or @$correct;  # score 1 for correctly assigning zero categories
-  my %correct = map {$_,1} @$correct;
-  my $intersection = 0;
-  foreach (@$assigned) {$intersection++ if exists $correct{$_}}
-  return 2*$intersection / (@$assigned + @$correct);
+  return 2 * $self->_intersection($assigned, $correct) / (@$assigned + @$correct);
+}
+
+sub recall {
+  my ($self, $assigned, $correct) = @_;
+  return 1 if !@$assigned and !@$correct;
+  return 0 if  @$assigned and !@$correct; # Don't divide by zero
+  
+  return $self->_intersection($assigned, $correct) / @$correct;
+}
+
+sub precision {
+  my ($self, $assigned, $correct) = @_;
+  return 1 if !@$assigned and !@$correct;
+  return 0 if !@$assigned and  @$correct; # Don't divide by zero
+  
+  return $self->_intersection($assigned, $correct) / @$assigned;
 }
 
 sub accuracy {
@@ -81,6 +94,15 @@ sub error {
   foreach (@$assigned) { $symmetric_diff++ unless exists $correct{$_}  }
   foreach (@$correct ) { $symmetric_diff++ unless exists $assigned{$_} }
   return $symmetric_diff / $self->cat_map->categories;
+}
+
+sub _intersection {
+  my ($self, $one, $two) = @_;
+  my %uniq;
+  @uniq{@$one} = ();
+  my $result = 0;
+  foreach (@$two) {$result++ if exists $uniq{$_}}
+  return $result;
 }
 
 # Default noop
@@ -292,7 +314,7 @@ ready to categorize new documents.
 =item * $c->categorize($content)
 
 Processes the text in C<$content> and returns an object blessed into
-the C<AI::Categorize::Result> class (hereafter abbreviated as C<$r>).
+the C<AI::Categorize::Result> class.
 
 To ease memory requirements, in the future C<$content> may be allowed
 to be passed as a filehandle.
@@ -361,7 +383,29 @@ no extras were assigned) will have an F1 score of 1.  A terrible job
 categorizing (no overlap between correct & assigned categories) will
 have an F1 score of 0.  Medium jobs will be somewhere in between.
 
-=item * $r->extract_words($text)
+=item * $c->precision(\@assigned_categories, \@correct_categories)
+
+Returns the 'precision' measure, which is defined as C<I/A>, where
+C<A> is the number of elements in C<@assigned_categories>, and C<I> is
+the number of elements in the intersection of C<@assigned_categories>
+and C<@correct_categories>.
+
+If your categorizer is being too strict, i.e. assigning fewer
+categories than it should be, then the precision will be significantly
+higher than the recall.
+
+=item * $c->recall(\@assigned_categories, \@correct_categories)
+
+Returns the 'recall' measure, which is defined as C<I/C>, where
+C<C> is the number of elements in C<@correct_categories>, and C<I> is
+the number of elements in the intersection of C<@assigned_categories>
+and C<@correct_categories>.
+
+If your categorizer is being too lenient, i.e. assigning more
+categories than it should be, then the recall will be significantly
+higher than the precision.
+
+=item * $c->extract_words($text)
 
 Returns a reference to a hash whose keys are the words contained in
 C<$text> and whose values are the number of times each word appears.
@@ -380,7 +424,7 @@ single entry in the categorizer.
 
 =head1 C<AI::Categorize::Result> Methods
 
-An C<AI::Categorize::Result> object is returned by the
+An C<AI::Categorize::Result> object (hereafter abbreviated as C<$r>) is returned by the
 C<$c-E<gt>categorize> method, described above.
 
 =over 4

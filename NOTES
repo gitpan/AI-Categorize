@@ -7,6 +7,7 @@ People with interest in AI::Categorize:
  Jon Orwant <orwant@oreilly.com>
  Obvious <>
  Chris Siegler <siegler@visi.com>
+ frisco@blackant.net
 
 Idea from obvy: try tying into infobot (purl) to identify IRC moods: 
 @moods = qw(indifferent flame_mode pissed inebriated happy sad)
