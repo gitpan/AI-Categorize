@@ -1,0 +1,16 @@
+Revision history for Perl extension AI::Categorize::NaiveBayes.
+
+0.03  Tue May 22 18:01:46 CDT 2001
+   - First release to CPAN
+   - Added 'make test' procedure
+   - Wrote docs for the major classes
+
+0.02
+   - Added AI::Categorize::kNN class
+   - Added AI::Categorize::Evaluate class and the evaluate.pl script
+
+0.01  Thu Apr 12 23:42:11 2001
+	- original version; created by h2xs 1.1.1.4 with options
+		-XA -n AI::Categorize::NaiveBayes
+        
+        - Not released to CPAN.

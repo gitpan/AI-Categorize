@@ -1,0 +1,11 @@
+Categorize.pm
+Changes
+MANIFEST
+Makefile.PL
+README
+evaluate.pl
+lib/AI/Categorize/Evaluate.pm
+lib/AI/Categorize/NaiveBayes.pm
+lib/AI/Categorize/kNN.pm
+t/knn.t
+t/naive_bayes.t
